@@ -111,7 +111,16 @@ $C$:可行染色体集合;
   算法每次迭代都会记录当前可行染色体解的最优目标值，如果当前迭代找到的最优可行解目标值小于全局最优值，则更新全局最优值，并且记录对应的染色体为最优解，如果迭代$L$次，全局最优值不被更新，则判定算法收敛，算法停止。
 \subsection{基于GPU的并行遗传算法设计}
 \subsubsection{并行评价算法设计}
-遗传算法中
+  遗传算法中最消耗时间的部分是染色体评价部分，由于需要评价大量的染色体，评价每个染色体都需要大量计算开销，但是幸运的是遗传算法具有天然的并行性，每个不同的染色体评价可以并行执行，更进一步，每个染色体中的不同基因的计算也可以并行执行，这样并行粒度是很大的。
+  下面将介绍评价过程的具体并行实现算法，算法主要包括可行性判断和效用函数计算两个步骤，算法计算流程如下图所示：
+\begin{figure}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=2 \textwidth]{figures/GPUfitness.pdf}}
+    \end{center}
+  \caption{{\footnotesize{GPU上遗传算法评价函数计算过程图}}}
+  \label{IterNum}
+\end{figure}
 \subsubsection{并行排序算法设计}
 \subsubsection{并行变异与交叉}
 
