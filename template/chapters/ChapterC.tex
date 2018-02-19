@@ -114,13 +114,20 @@ $C$:可行染色体集合;
   遗传算法中最消耗时间的部分是染色体评价部分，由于需要评价大量的染色体，评价每个染色体都需要大量计算开销，但是幸运的是遗传算法具有天然的并行性，每个不同的染色体评价可以并行执行，更进一步，每个染色体中的不同基因的计算也可以并行执行，这样并行粒度是很大的。
   下面将介绍评价过程的具体并行实现算法，算法主要包括可行性判断和效用函数计算两个步骤，算法计算流程如下图所示：
 \begin{figure}
-\setlength{\belowcaptionskip}{-0.5cm}
   \begin{center}
-    {\includegraphics[width=2 \textwidth]{figures/GPUfitness.pdf}}
+    {\includegraphics[width=1 \textwidth]{figures/GPUfitness.pdf}}
     \end{center}
   \caption{{\footnotesize{GPU上遗传算法评价函数计算过程图}}}
   \label{IterNum}
 \end{figure}
+符号解释：
+染色体（chromosome）基因编号：$c^d_i$表示第$i$个染色体的第$d$个基因位置。
+备选路径集合（paths），$p_i$表示第$i$业务的所有备选路集合。
+业务带宽（bandwidth）,$bw_i$表示第$i$个业务需要的带宽大小。
+链路流量（flow），$f_e$表示第链路$e$上占用的流量大小。
+链路单位代价（weight）,$w_e$表示链路$e$上的代价。
+共享内存中间数组（shared），$sh_e$表示链路$e$上的总代价。
+  如图所示，算法为每一个染色体开辟一个block，每个block内部每个线程负责染色体上的相应业务，首先通过寻址备选路径集合找到这个业务选择的路径，路径上的每一个链路都需要被占用流量，于是遍历这条路径，将业务的流量加到相应的链路上，所有线程同时计算，最后得到链路上占用的流量大小为数组$flow$,并行比较$flow$和$capacity$数组，如果某一线程发现容量超限，则设置链路代价为无穷大（INF）表示此染色体不可行，最后对得到的链路代价数组进行求和，求和采用GPU上经典的并行规约算法，最后得到染色体对应的效用函数值。
 \subsubsection{并行排序算法设计}
 \subsubsection{并行变异与交叉}
 
