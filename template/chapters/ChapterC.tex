@@ -144,8 +144,25 @@ $C$:可行染色体集合;
 \subsubsection{并行排序，变异与交叉}
   由于遗传算法中最消耗时间的部分是评价部分，本设计中对其他部分的并行步骤采用较简单的算法。
   在评价部分结束后，需要对所有的染色体按照效用函数的大小降序排序，本文采用GPU上的odd-even算法进行排序操作，odd-even算法的计算过程如下图所示：
-
-
+\begin{figure}
+  \begin{center}
+    {\includegraphics[width=0.8\textwidth]{figures/odd-even.pdf}}
+    \end{center}
+  \caption{{\footnotesize{并行奇偶排序例子}}}
+  \label{IterNum}
+\end{figure}
+如图所示，奇偶排序算法每次两两比较数组中的值的大小，然后将较小的那个值交换到前面，奇数次的时候比较下标为$2k和2k+1$的值,其中$k \in [0,POP/2]$,偶数次的时候比较下标为$2k-1和2k$的值，其中$k \in[1,POP/2]$，最终经过$POP/2$轮的奇偶比较，就可以得到排序好的数组，从奇偶排序的执行过程可以看出，每一轮比较中的$POP/2$次比较是是相互独立无关的，其具有天然的可并行性，而且其并行实现较简单。
+下面介绍染色体排序算法的GPU代码实现：
+\begin{figure}
+  \begin{center}
+    {\includegraphics[width=0.8\textwidth]{figures/GPUoddeven.png}}
+    \end{center}
+  \caption{{\footnotesize{GPU并行奇偶排序伪代码}}}
+  \label{IterNum}
+\end{figure}
+如图所示，sort函数一共需要执行$POP/2$轮比较，也就要调用kernel_sort$POP/2$次，在kernel_sort中，一个线程负责两个数的比较与交换操作，在寻址数组之前，要判断当前的比较轮次的奇偶性，如果为奇数，则当前标号为$threadid$的线程要去比较标号为$2*threadid$和标号为$2*threadid+1$的目标值，如果当前标号为偶数值，则去比较下标为$2*threadid-1$和$2*threadid$的值，如果出现较小的值在后面，需要进行交换操作,交换操作在交换$objective$数组的同时，也要交换相应的染色体($chromsome$)数组,这样一轮比较达到并行度为$POP/2$,一个有$POP/2$个线程参与比较交换计算，因为要循环$POP/2$次才能保证排序完毕，所以算法总的计算复杂度为$O(POP)$。
+  交叉过程分为父母选取和交叉计算两个kernel，父母选取过程随机并行地选取$beta+gamma$对父母，每个线程负责选取一对父母，并且将选取的父母下标记录到$father$和$monther$数组中。
+  交叉计算过程示意图如下所示：
 \section{基于Lag的优化算法设计}
 \subsection{问题建模}
 \subsection{基于GPU的并行lag算法设计}
