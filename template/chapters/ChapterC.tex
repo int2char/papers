@@ -160,8 +160,16 @@ $C$:可行染色体集合;
   \label{IterNum}
 \end{figure}
   如图所示，sort函数一共需要执行$POP/2$轮比较，也就要调用kernel\_sort共POP/2次，在kernel\_sort中，一个线程负责两个数的比较与交换操作，在寻址数组之前，要判断当前的比较轮次的奇偶性，如果为奇数，则当前标号为$threadid$的线程要去比较标号为$2*threadid$和标号为$2*threadid+1$的目标值，如果当前标号为偶数值，则去比较下标为$2*threadid-1$和$2*threadid$的值，如果出现较小的值在后面，需要进行交换操作,交换操作在交换$objective$数组的同时，也要交换相应的染色体($chromsome$)数组,这样一轮比较达到并行度为$POP/2$,一个有$POP/2$个线程参与比较交换计算，因为要循环$POP/2$次才能保证排序完毕，所以算法总的计算复杂度为$O(POP)$。
-  交叉过程分为父母选取和交叉计算两个kernel，父母选取过程随机并行地选取$\beta+\gamma$对父母，每个线程负责选取一对父母，并且将选取的父母下标记录到$father$和$monther$数组中。
-  交叉计算过程示意图如下所示:
+  交叉过程分为父母选取和交叉计算两个kernel，父母选取过程随机并行地选取$\beta+\gamma$对父母，每个线程负责选取一对父母，并且将选取的父母下标记录到$father$和$monther$数组中,父母选取GPU计算示意图如下所示：
+\begin{figure}
+  \begin{center}
+    {\includegraphics[width=0.8\textwidth]{figures/choose.pdf}}
+    \end{center}
+  \caption{{\footnotesize{GPU并行父母选取过程}}}
+  \label{IterNum}
+\end{figure}  
+  每个线程进行两次随机，$mother$标号只能在前$\alpha$个精英染色体中选取，$father$表号的选取在前$\alpha+\beta$中选取，这样既能够给予精英染色体更大的交叉几率，也可以保证解的搜索空间变化足够大，避免陷入局部最优值。
+  父母选取过程结束后，在GPU端记录了所选取的$mother$和$father$数组，$mother$和$father$数组将用于交叉部分的计算，交叉部分的并行粒度更高，其中每个基因点的计算都是并行执行的，如下图示：
 \begin{figure}
   \begin{center}
     {\includegraphics[width=0.8\textwidth]{figures/GPUcross.pdf}}
@@ -177,8 +185,93 @@ $C$:可行染色体集合;
   \caption{{\footnotesize{GPU并行均匀交叉代码}}}
   \label{IterNum}
 \end{figure}
-上图为CUDA上实现的均匀交叉伪代码，kernel输入为已经随机选好的$monther$和$father$数组，线程进入函数先找到block对应的母亲和父亲的染色体id，通过id寻址到相应的染色体编号，通过threadid寻址到当前的基因位置，然后随机产生一个0到100的数，此数如果小于50，则选择继承母亲的基因，反之，则继承父亲的基因，需要注意的是新生成的染色体数组（$newchormsome$数组），其前$\alpha$个染色体直接复制排序后染色体集合的前$\alpha$个染色体，也就是说前面的$\alpha$个精英染色体直接保留到下一轮，所以代码中交叉产生的新染色体基因在填入$newchormsome$数组中时，需要偏移$\alpha$个单位。
-\section{基于Lag的优化算法设计}
-\subsection{问题建模}
-\subsection{基于GPU的并行lag算法设计}
+  上图为CUDA上实现的均匀交叉伪代码，kernel输入为已经随机选好的$monther$和$father$数组，线程进入函数先找到block对应的母亲和父亲的染色体id，通过id寻址到相应的染色体编号，通过threadid寻址到当前的基因位置，然后随机产生一个0到100的数，此数如果小于50，则选择继承母亲的基因，反之，则继承父亲的基因，需要注意的是新生成的染色体数组（$newchormsome$数组），其前$\alpha$个染色体直接复制排序后染色体集合的前$\alpha$个染色体，也就是说前面的$\alpha$个精英染色体直接保留到下一轮，所以代码中交叉产生的新染色体基因在填入$newchormsome$数组中时，需要偏移$\alpha$个单位。
+  最后对于变异部分，由之前的分析可知，变异步骤的计算量不大，并行粒度也不高，所以其并行算法实现不再赘述。
+\section{基于拉格朗日的优化算法设计}
+  基于遗传算法的路由优化算法，虽然过程简单，但是其具有以下缺点,第一，需要事先计算大量备选路径，不能很好地适应网络的动态变化，一旦网络链路发生变化，又要重新计算备选路径。第二，遗传算法从开始到收敛需要大量的迭代次数，虽然经过GPU加速计算，但是由于收敛缓慢，任然需要大量的计算时间，迭代次数，很大程度上是决定于初始染色体集合的好坏，而随机选择路径的方式很难得到好的初始集合。第三，遗传算法容易陷入局部最优解，交叉范围小，和变异范围小都会使得算法提前陷入局部最优解，而如果交叉范围太大，变异范围太大，又会使得算法收敛缓慢，而且路由优化问题中每一个业务都有大量备选路径，问题的解空间很大，即使增大搜索范围也很难找到更优化的解。于是本节通过分析采用基于拉格朗日乘子法的GPU并行方法来求解路由优化问题，实验显示基于拉格朗日。。。。。。。。。。。
+\subsection{问题建模}  
+  路由优化问题就是为每一个业务选取一条路径，以使得效用函数最小化。然而在MILP模型中，网络容量约束，把所有的路由变量联系到一起，因为这些变量的取值必修保证每一条链路$(i,j)$上占用的流量小于其容量$\beta\cdot c_{ij}$,正是由于存在链路容量约束，每个业务的路由选取才变得不相互独立，但是要利用GPU的并行特性，需要寻找独立计算的可能性，因此，本文采用拉格朗日松弛方法，把一个路由优化问题分解成一些单个业务的寻路问题，而这些单业务的寻路问题是相互独立的，很适合并行计算。将问题。。中的网络容量约束松弛进目标函数得到如下问题：
+\begin{equation}\label{LagProb}
+\begin{split}
+L(\mathbf{\lambda})= min\sum\limits_{d \in D}\sum\limits_{(i,j) \in E_a} w_{ij}x_{ij}^d bw_d+ \\ ~~~~~\sum\limits_{(i,j) \in E_a}\lambda_{ij}(\sum\limits_{d \in D} (x_{ij}^d bw_d-\beta c_{ij})
+\end{split}
+\end{equation}
+其中 $\lambda_{ij}$ 表示链路 $(i,j)$的拉格朗日乘子。
+这个表达式(\ref{LagProb})还可以表示为:
+\begin{equation}\label{Lagprob1}
+L(\mathbf{\lambda})= min\sum\limits_{d \in D}\sum\limits_{(i,j) \in E_a} (w_{ij}+\lambda_{ij})x_{ij}^dbw_d -\sum\limits_{(i,j) \in E_a}\lambda_{ij}\beta c_{ij}
+\end{equation}
+subject to:
+\begin{equation}\label{FlowConv2}
+\begin{split}
+\sum\limits_{(i,j) \in E_a} x_{ij}^d - \sum\limits_{(j,i) \in E_a} x_{ji}^d
+=\begin{cases}
+1 & \text{if $i = s_d$}\\
+-1 & \text{if $i = t_d$} \\
+0 &{ohterwise}
+\end{cases}
+\\~~~~~~~~\forall i\in V_a, \forall d\in D
+\end{split}
+\end{equation}
+ 拉格朗日子问题的目标函数中的$\sum_{(i,j) \in E_a}\lambda_{ij}\beta c_{ij}$这一项，不随着拉格朗日乘子的变化而变化，本文将其作为常数项而丢掉不讨论，丢掉$\sum_{(i,j) \in E_a}\lambda_{ij}\beta c_{ij}$这一项后，拉格朗日子问题的目标函数中只含有代价部分 $w_{ij}+\lambda_{ij}$和$x_{ij}^d$的乘积。注意到，$\sum_{(i,j) \in E_a} (w_{ij}+\lambda_{ij})x_{ij}^d bw_d$表示业务$d$的总路由代价，因此，拉格朗日子问题的目标函数是最小化所有业务需求的路径路由代价总和，在这个子问题的约束中，没有一个约束同时包含有两个及以上的业务需求相关的变量，所有这个拉格朗日子问题可以被分解成一系列独立的最短路径问题（每个业务需求对于一个最短路问题），只是这些最短路问题的链路单位代价发生改变，链路代价变得和拉格朗日乘子 $\mathbf{\lambda}$相关，也就是说给定一个拉格朗日乘子$\mathbf{\lambda}$，我们可以通过并行地计算一系列的最短路径问题来解决这个拉格朗日子问题。
+因为把容量约束松弛进效用函数中后，不会增加目标函数的值（<0）， $L(\mathbf{\lambda})$成为原问题最优目标函数值的下界，$z^* \ge L(\mathbf{\lambda})$，为了得到最紧的的下界值，我们要解决以下这个优化问题：
+ \begin{equation}\label{dual}
+L^*(\mathbf{\lambda^*}) = maximize_{\mathbf{\lambda}}L(\mathbf{\lambda})
+\end{equation}
+~~~subject to: (\ref{FlowConv2})
+ \vskip 0.2cm
+  以上的这个优化问题也被称为原来路由优化问题的对偶问题（），其中$\mathbf{\lambda}$表示最优拉格朗日乘子，为了得到最优乘子$\mathbf{\lambda^*}$,可以使用次梯度优化算法来解决，次梯度优化计算时，第一次先初始化乘子 $\mathbf{\lambda}^0$,然后通过以下过程进行迭代求解：
+\begin{equation}\label{iter}
+   \mathbf{\lambda}_{ij}^{(k+1)} =\mathbf{\lambda_{ij}}^{(k)}+\theta_{k} g^{(k)}= \mathbf{\lambda_{ij}}^{(k)} + \theta_k[(\sum\limits_{d \in D}x_{ij}^d - c_{ij})]^+
+\end{equation}
+  其中， $\mathbf{\lambda}_{ij}^{(k)}$表示第$k$次迭代的对应于边$(i,j)$的拉格朗日乘子， $g^{(k)}$是$L(\mathbf{\lambda})$对$\mathbf{\lambda}^{k}$的任意一种次梯度，$\theta_k$ 表示第$k$次的迭代的步长，标记$[\alpha]^+$表示$\alpha$中符号为正的部分，也就说$[\alpha]^+=max(\alpha, 0)$，从表达式可以看出来如果链路$(i,j)$上的流量总和超过链路$(i,j)$上的容量，链路$(i,j)$上的$\lambda_{ij}^k$拉格朗日乘子会增加，也就是表示一些业务流量需要从链路$(i,j)$上移除，另外，为了避免产生负权重的链路代价，当链路容量大于其上的流量时，我们并不去减小此链路$(i,j)$上的$\lambda_{ij}^k$。
+ 根据以上讨论，我们给出基于拉格朗日乘子法的并行路由优化算法的框架，如图所示，LR-PTEA主要包括以下步骤：步骤一，为$G_a(V_a, E_a)$初始化链路权重。步骤二，计算所有业务的最短路径，其中路径计算任务被分配到GPU进行并行计算。进一步，为了充分利用GPU的大规模计算能力，一种基于GPU的并行最短路算法被用来为每个业务计算路径。步骤三，为了从当前计算出来的路径中得到更好的目标函数值，对步骤二中计算出来的路径进行调整。步骤四，更新链路权重，更新完毕后，如果停止条件不满足，则回到步骤二，进入下一轮迭代。LR-PTEA 如果在连续$\beta$次成功的迭代后依然不能找到更优的全局解，则停止算法过程。
+\begin{figure}
+  \begin{center}
+    {\includegraphics[width=1\textwidth]{figures/lagrange.pdf}}
+    \end{center}
+  \caption{{\footnotesize{LR-PTEA算法流程图}}}
+  \label{IterNum}
+\end{figure}
+\subsection{基于GPU的并行路由计算}
+  在每次迭代中，LR-PROA为每个业务 $d \in D$在图 $G_a(V_a, E_a)$中计算最短路径，显然，丢掉链路容量约束后，不同业务的最短路径计算可以独立在GPU上并行执行，但是，最短路算法的逻辑对于GPU来说太过复杂，GPU最初是被设计来做大规模的数值计算问题，其只实用于逻辑比较简单，但是数值计算量较大的任务，所以在GPU上直接开辟一个线程来计算一个业务的路径，不仅仅在计算上是低效的，而且这样的并行粒度也不能充分利用GPU的大规模并行能力。为了充分提高最短路径的计算速度，LR-PROA 对最短路径算法进行并行化设计。
+\begin{algorithm}[htb] 
+\caption{{Bellman最短路算法}}
+\label{Bellman}
+\begin{algorithmic}[1] 
+\Require 
+网络拓扑:$G(V, E)$;
+源点:$s$;
+\Ensure 
+从$s$开始到其他点的路径集合$P$;
+\For {each node $v \in V$}
+\State {$Dist[v] \leftarrow \infty$}
+\State {$Pre[v] \leftarrow $ NIL}
+\EndFor
+\State {$Dist[s] \leftarrow 0$}
+\State {$Mark \leftarrow 1$}
+\While {$Mark > 0$}
+\State {$Mark \leftarrow 0$}
+\For{each link $(u,v) \in E$}
+\If{$Dist[v]>Dist[u]+w_{uv}$}
+\State {$Dist[v] \leftarrow Dist[u]+w_{uv}$}
+\State {$Pre[v] \leftarrow u$}
+\State {$Mark = 1$}
+\EndIf
+\EndFor
+\EndWhile
+\State {根据前驱数组$Pre$,重新构建最短路集合，输出路径到集合$P$}
+\Return {$P$}
+\end{algorithmic}
+\end{algorithm}
+  文章[]提出一种Dijkstra最短路径算法在GPU上的并行实现，但是从算法结构上分析，Dijkstra最短路径算法并不适应于并行算法的设计，所以Dijkstra最短路径算法在GPU上的实现不能得到很好的加速效果，为了期望得到更好的加速效果，LR-PROA选择Bellman-Ford最短路算法来进行并行实现，Bellman-Ford最短路算法逐步地减小距离标记 $Dist[v],v\in V$，直达其收敛与真实的最短距离。Bellman-Ford算法过程如上图，其中 $Dist[v]$表示距离起点$s$到$v$的最短路径距离,$Pre[v]$表示点$s$到点$v$的最短路径上$v$的前驱节点，在初始化好了所以节点的距离数组和前驱节点数组之后，Bellman-Ford算法最多迭代 $|V|$次，每一次迭代算法松弛一次图$G(V, E)$中的所有的边（第10-11行）。Bellman-Ford算法的算法复杂度为$(|V|\cdot |E|)$，他的复杂度高于Dijkstra最短路径算法的复杂度，但是，因为Bellman-Ford算法每次松弛边的操作都是独立无关的，通过为每一条边的松弛操作分配一个独立的线程执行，Bellman-For算法很容易在GPU上实现并行化。
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/paframework.pdf}}
+    \end{center}
+  \caption{{\footnotesize{并行业务计算框架}}}
+  \label{ParFramework}
+\end{figure*}
+  上图中显示了LR-PROA的最短路径计算的并行实现框架。首先，将业务量需求根据业务的源节点将业务分配成不同的组，使得每一组内的业务的源节点相同。我们假设第$i$个组的源节点为$s_i$。然后，为了高速的计算最短路径，每一组的最短路径计算使用$m$个GPU线程的并行bellman-ford算法进行计算，如上图所示，线程$T_{i,j}$负责为对应于源点$s$的链路$e_{j}$进行松弛操作。因此总的并行执行的线程数是$m \times k$,其中$m$和$k$分别表示链路数目和组的数目。
 \subsection{仿真实验分析}
