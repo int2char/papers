@@ -274,4 +274,15 @@ L^*(\mathbf{\lambda^*}) = maximize_{\mathbf{\lambda}}L(\mathbf{\lambda})
   \label{ParFramework}
 \end{figure*}
   上图中显示了LR-PROA的最短路径计算的并行实现框架。首先，将业务量需求根据业务的源节点将业务分配成不同的组，使得每一组内的业务的源节点相同。我们假设第$i$个组的源节点为$s_i$。然后，为了高速的计算最短路径，每一组的最短路径计算使用$m$个GPU线程的并行bellman-ford算法进行计算，如上图所示，线程$T_{i,j}$负责为对应于源点$s$的链路$e_{j}$进行松弛操作。因此总的并行执行的线程数是$m \times k$,其中$m$和$k$分别表示链路数目和组的数目。
+  在CUDA编程模型中,kernel在执行在一系列的block中，一个block中包含一系列并行执行的线程，在本文的最短路算法并行实现中，每个block内部的线程用于松弛同一条链路$(i,j)$的不同源节点情况，比如，在图中，集合
+$\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其中 $T_{ij}$为对应源节点为$s_i$的链路$e_i$执行松弛操作，其中，我们设链路$e_i$的头节点和尾节点分别为$h_i$和$t_i$，可以看到，当这次迭代存在链路更新，那么标记$Mark$会被设置成一，这是为了优化算法的迭代次数，当某次迭代结束$Mark=0$则表示这次迭代没有边进行了更新操作，说明Bellman算法已经提前结束，实验证明这一个优化大大减小Bellman算法的迭代次数。
+  \begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/GPUimpl.pdf}}
+    \end{center}
+  \caption{{\footnotesize{GPU上Bellman算法的实现}}}
+  \label{ParFramework}
+\end{figure*}
+
 \subsection{仿真实验分析}
