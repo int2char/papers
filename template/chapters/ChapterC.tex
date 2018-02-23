@@ -275,8 +275,8 @@ L^*(\mathbf{\lambda^*}) = maximize_{\mathbf{\lambda}}L(\mathbf{\lambda})
 \end{figure*}
   上图中显示了LR-PROA的最短路径计算的并行实现框架。首先，将业务量需求根据业务的源节点将业务分配成不同的组，使得每一组内的业务的源节点相同。我们假设第$i$个组的源节点为$s_i$。然后，为了高速的计算最短路径，每一组的最短路径计算使用$m$个GPU线程的并行bellman-ford算法进行计算，如上图所示，线程$T_{i,j}$负责为对应于源点$s$的链路$e_{j}$进行松弛操作。因此总的并行执行的线程数是$m \times k$,其中$m$和$k$分别表示链路数目和组的数目。
   在CUDA编程模型中,kernel在执行在一系列的block中，一个block中包含一系列并行执行的线程，在本文的最短路算法并行实现中，每个block内部的线程用于松弛同一条链路$(i,j)$的不同源节点情况，比如，在图中，集合
-$\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其中 $T_{ij}$为对应源节点为$s_i$的链路$e_i$执行松弛操作，其中，我们设链路$e_i$的头节点和尾节点分别为$h_i$和$t_i$，可以看到，当这次迭代存在链路更新，那么标记$Mark$会被设置成一，这是为了优化算法的迭代次数，当某次迭代结束$Mark=0$则表示这次迭代没有边进行了更新操作，说明Bellman算法已经提前结束，实验证明这一个优化大大减小Bellman算法的迭代次数。
-  \begin{figure*}
+$\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其中 $T_{ij}$为对应源节点为$s_i$的链路$e_i$执行松弛操作，其中，我们设链路$e_i$的头节点和尾节点分别为$h_i$和$t_i$，可以看到，当这次迭代存在链路更新，那么标记$Mark$会被设置成一，这是为了优化算法的迭代次数，当某次迭代结束$Mark=0$则表示这次迭代没有边进行了更新操作，说明Bellman算法已经提前结束，实验证明这一个优化可以大大地减小Bellman算法的迭代运行次数。
+\begin{figure*}
 \setlength{\belowcaptionskip}{-0.5cm}
   \begin{center}
     {\includegraphics[width=1 \textwidth]{figures/GPUimpl.pdf}}
@@ -284,5 +284,80 @@ $\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其
   \caption{{\footnotesize{GPU上Bellman算法的实现}}}
   \label{ParFramework}
 \end{figure*}
+  最短路径算法CUDA实现算法伪代码如下所示。需要注意的是由于线程在GPU上是独立执行的，在更新节点的距离标记和前驱标记的时候会出现同步问题，假设线程$T_1$为链路$(x,v)$执行松弛操作，而线程$T_2$为链路$(y,v)$执行松弛操作，假设两个线程更新点$v$的距离标记和更新前驱标记的顺序如[]所示，如果$Dist[y] + w(y, v) < Dist[x] +w(x, v)$,那么$Dist[v]$被更新为$Dist[y] + w(y, v)$,但是由于更新的顺序发生交叉,节点$v$的前驱节点被更新成了$x$,而不是真正正确的前驱节点$y$。为了避免这个同步问题，算法设计中使用两个kernel，一个用来更新距离标号，一个用来更新前驱节点。
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{并行最短路计算}}
+\label{ParaSPC}
+\Require
+	 业务需求集合$D$;
+      链路集合$E$;
+\Ensure {业务需求的最短路径结合$P$}
+\State {将业务的源节点加入到集合$S$中}
+\State {$Mark \leftarrow$ 1}
+\While{$Mark > 0$}
+\State {$Mark \leftarrow$ 0}
+ \State {发射 kernel\_distance\_update($S$, $E$, $Dist$)}
+\EndWhile
+ \State {发射 kernel\_predecessor\_update($S$, $E$, $Dist$, $Pre$)}
+ \State {reconstruct the shortest paths for the traffic demands based on predecessor information record in $Pre$, and put the paths to set $P$}
+\Return {$P$}
+\end{algorithmic}
+\end{algorithm}
 
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{\small{kernel\_distance\_update($S$, $E$, $Dist$)}}
+\label{KernelDist}
+\State {$bid \leftarrow$ block ID}
+\State {$tid \leftarrow$ thread ID}
+\State {将 $(bid, tid)$ 映射到 id $sid$}
+\State {$s \leftarrow S[sid]$}
+\State {$e \leftarrow E[bid]$}
+\If{$Dist[s][e.tail] + e.weight < Dist[s][e.head]$}
+\State {$Mark \leftarrow 1$}
+\State {$Dist[s][e.head] \leftarrow Dist[s][e.tail] + e.weight$}
+\EndIf
+\Return
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{kernel\_predecessor\_update($S$, $E$, $Dist$,$Pre$)}}
+\label{KernelPre}
+\State {$bid \leftarrow$ block ID}
+\State {$tid \leftarrow$ thread ID}
+\State {将 $(bid, tid)$ 映射到 id $sid$}
+\State {$s \leftarrow S[sid]$}
+\State {$e \leftarrow E[bid]$}
+\If{$Dist[s][e.tail] + e.weight = Dist[s][e.head]$}
+\State {$Pre[s][e.head]= e.tail$}
+\EndIf
+\Return
+\end{algorithmic}
+\end{algorithm}
+
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.1cm}
+  \begin{center}
+    {\includegraphics[width=0.8 \textwidth]{figures/SynPro.pdf}}
+    \end{center}
+  \caption{{\footnotesize{同步问题的例子}}}
+  \label{SynPro}
+\end{figure*}
+\subsection{链路权重更新}
+  在LR-PROA算法中，在第$(k+1)$次迭代，链路$(i,j)$的权重被更新为$w_{ij}^{k} + \lambda_{ij}^{k+1}$,其中$\lambda_{ij}^{k+1}$被更新为：
+\begin{equation}\label{Iter}
+  \lambda_{ij}^{k+1} = \lambda_{ij}^k + \theta_k[(\sum\limits_{d \in D}x_{ij}^dbw_d - \beta c_{ij})]^+.
+\end{equation
+  为了保证收敛性，第$k$次迭代的更新步长($\theta_k$)可以被设置为 $\frac{1}{k}$[]。然而，通过仿真发现，当($\theta_k$)被设置为 $\frac{1}{k}$时，其收敛缓慢。让我们考虑图（）的例子，其中链路$(i,j)$上标记分别表示链路权重和链路上剩余的容量大小。假设现在有两个业务需求（$d_1$和$d_2$）其源和目的节点都是$A$和$D$，且每一个业务的流量大小都是4个单位。为了展示这个迭代过程，我们把算法前5次的迭代结果表示在表()中，从表中可以看到，业务计算出的最短路径$A-B-D$和$A-C-D$之间徘徊。算法必修等到$A-B-D$和$A-C-D$的两条路的权重相等时才能停止，只有这样这两个业务才可能分离，其中一个选择$A-B-D$，而另一个选择$A-C-D$。但是，这需要大量的迭代才能达到。
+  另外一种常用的步长选择是：
+\begin{equation}\label{StepSize}
+ \theta_k = \frac{\rho[UB-{L(\mathbf{\lambda}^k)]}}{||\mathbf{Ax^k}-\mathbf{b}||^2}
+\end{equation}
+  其中$UB$是最优化目标函数的上界，$\rho$是一个取值范围为0到2的常数，$\mathbf{A}$ 和 $\mathbf{b}$分别是链路相关矩阵和链路上的剩余容量向量。但是从实验中发现设置这种步长迭代效果也不令人满意，因此，本设计采用一种简答但是有效的链路权重更新步长，假设$\theta_{k}^{ij}$为第$k$th次迭代时链路$(i,j)$上的需更新的步长，那么$\theta_{k}^{ij}$为：
+\begin{equation}\label{StepSizeUsed}
+\theta_{k}^{ij} = \frac{1}{|\beta c_{ij}-\sum\limits_{d \in D} x_{ij}^d bw_d|}
+\end{equation}
 \subsection{仿真实验分析}
