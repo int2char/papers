@@ -347,17 +347,61 @@ $\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其
   \label{SynPro}
 \end{figure*}
 \subsection{链路权重更新}
+\subsubsection{权重更新步长}
   在LR-PROA算法中，在第$(k+1)$次迭代，链路$(i,j)$的权重被更新为$w_{ij}^{k} + \lambda_{ij}^{k+1}$,其中$\lambda_{ij}^{k+1}$被更新为：
 \begin{equation}\label{Iter}
   \lambda_{ij}^{k+1} = \lambda_{ij}^k + \theta_k[(\sum\limits_{d \in D}x_{ij}^dbw_d - \beta c_{ij})]^+.
-\end{equation
-  为了保证收敛性，第$k$次迭代的更新步长($\theta_k$)可以被设置为 $\frac{1}{k}$[]。然而，通过仿真发现，当($\theta_k$)被设置为 $\frac{1}{k}$时，其收敛缓慢。让我们考虑图（）的例子，其中链路$(i,j)$上标记分别表示链路权重和链路上剩余的容量大小。假设现在有两个业务需求（$d_1$和$d_2$）其源和目的节点都是$A$和$D$，且每一个业务的流量大小都是4个单位。为了展示这个迭代过程，我们把算法前5次的迭代结果表示在表()中，从表中可以看到，业务计算出的最短路径$A-B-D$和$A-C-D$之间徘徊。算法必修等到$A-B-D$和$A-C-D$的两条路的权重相等时才能停止，只有这样这两个业务才可能分离，其中一个选择$A-B-D$，而另一个选择$A-C-D$。但是，这需要大量的迭代才能达到。
+\end{equation}
+  为了保证收敛性，第$k$次迭代的更新步长($\theta_k$)可以被设置为 $\frac{1}{k}$[]。然而，通过仿真发现，当($\theta_k$)被设置为 $\frac{1}{k}$时，其收敛缓慢。让我们考虑图（）的例子，其中链路$(i,j)$上标记分别表示链路权重和链路上剩余的容量大小。假设现在有两个业务需求（$d_1$和$d_2$）其源和目的节点都是$A$和$D$，且每一个业务的流量大小都是4个单位。为了展示这个迭代过程，我们把算法前5次的迭代结果表示在表()中，从表中可以看到，业务计算出的最短路径一直在$A-B-D$和$A-C-D$之间徘徊。算法必修等到$A-B-D$和$A-C-D$的两条路的权重相等时才能停止，只有这样这两个业务才可能分离，其中一个选择$A-B-D$，而另一个选择$A-C-D$。但是，正如表中所示这需要大量的迭代才能达到。
+\begin{figure}
+\setlength{\belowcaptionskip}{-0.1cm}
+  \begin{center}
+    {\includegraphics[width=0.4 \textwidth]{figures/IterNum.pdf}}
+    \end{center}
+  \caption{{\footnotesize{An illustrative example for link weights update}}}
+  \label{IterNum}
+\end{figure}
+\begin{table}[t]
+\newcommand{\tabincell}[2]{\begin{tabular}{@{}#1@{}}#2\end{tabular}}
+\setlength{\abovecaptionskip}{0.2cm}
+  \centering
+ \scriptsize{
+ \renewcommand{\tabcolsep}{0.09cm}
+ \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{| c | c | c | c|}
+    \hline
+     Iteration number & \tabincell{l}{Calculated paths for \\the two demands} & Path weights & $\theta_k$
+\\ \hline
+ 0 & \tabincell{l}{A-B-D \\ A-B-D} & \tabincell{l}{4(1+1) \\ 4(1+1)} & 1   \\ \hline
+1 & \tabincell{l}{A-C-D \\ A-C-D } & \tabincell{l}{4(2+2) \\ 4(2+2)} & 1   \\ \hline
+2 & \tabincell{l}{A-B-D \\ A-B-D} & \tabincell{l}{4(1+4+1+4) \\ 4(1+4+1+4)} & 0.5 \\ \hline
+3 & \tabincell{l}{A-C-D\\ A-C-D} & \tabincell{l}{4(2+4+2+4) \\ 4(2+4+2+4)} & 0.33 \\ \hline
+4 & \tabincell{l}{A-B-D \\ A-B-D} & \tabincell{l}{4(1+6+1+6) \\ 4(1+6+1+6)} & 0.25 \\ \hline
+5 & \tabincell{l}{A-C-D \\ A-C-D} & \tabincell{l}{4(2+5.33+2+5.33) \\ 4(2+5.33+2+5.33)} & 0.2 \\ \hline
+\end{tabular}
+ \vskip 0.2 cm
+  \caption{The illustration for the Laglanrian iteration process}
+  \label{Iterprocess}
+}
+\end{table}
   另外一种常用的步长选择是：
 \begin{equation}\label{StepSize}
- \theta_k = \frac{\rho[UB-{L(\mathbf{\lambda}^k)]}}{||\mathbf{Ax^k}-\mathbf{b}||^2}
+\theta_k = \frac{\rho[UB-{L(\mathbf{\lambda}^k)]}}{||\mathbf{Ax^k}-\mathbf{b}||^2}
 \end{equation}
   其中$UB$是最优化目标函数的上界，$\rho$是一个取值范围为0到2的常数，$\mathbf{A}$ 和 $\mathbf{b}$分别是链路相关矩阵和链路上的剩余容量向量。但是从实验中发现设置这种步长迭代效果也不令人满意，因此，本设计采用一种简答但是有效的链路权重更新步长，假设$\theta_{k}^{ij}$为第$k$th次迭代时链路$(i,j)$上的需更新的步长，那么$\theta_{k}^{ij}$为：
 \begin{equation}\label{StepSizeUsed}
 \theta_{k}^{ij} = \frac{1}{|\beta c_{ij}-\sum\limits_{d \in D} x_{ij}^d bw_d|}
 \end{equation}
+  从（）（），我们可以看到，如果一条链路上承载的流量大小超过了这条链路上的容量大小，那么这条链路上的权重在下一次迭代之前就会增加1,对于其他的流量满足约束的链路吗，其权重不会改变，（）（）可以看到，如果使用（）的步长更新方法，LR-PROA仅仅只需要一次迭代就能够得到例子中（）最优的权重，实验表明，这种粗粒度的更新操作大大的减小了算法的收敛迭代次数，从而大大缩短算法运行时间。
+\subsubsection{随机更新策略}
+  拉格朗日松弛法将原问题分解成了一个个独立的最短路径问题，这样使得算法可以并行化进行设计，但是由于个个子问题独立分离，使得每个问题再求最短路径时都是贪心的，这样可能会使得大量业务抢占同一批链路，造成拥塞，一旦拥塞，链路的权重增加，又会使得大量的业务放弃这一批链路，去抢占其他链路，这样恶性循环，使得算法难以收敛，比如图（）中的例子。
+\begin{figure}
+\setlength{\belowcaptionskip}{-0.1cm}
+  \begin{center}
+    {\includegraphics[width=0.4 \textwidth]{figures/random.pdf}}
+    \end{center}
+  \caption{{\footnotesize{An illustrative example for link weights update}}}
+  \label{IterNum}
+\end{figure}
+
 \subsection{仿真实验分析}
