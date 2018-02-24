@@ -438,5 +438,38 @@ $\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其
   \caption{{\footnotesize{An illustrative example for link weights update}}}
   \label{IterNum}
 \end{figure}
-  为了说明业务路径调整算法，我们引入一些符号，
+  为了说明业务路径调整算法，我们引入一些符号，假设$P$表示步骤2所计算出来的路径集合，其中$p_d\in P$表示业务$d$的路径, $rp_{d}$表示路径$p_d$上的可用带宽，$rp_{d} = min\{r_e | e\in p_d\}$，其中$r_e$表示链路$e$上的剩余带宽。
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{Path Adjustment}}
+\label{PathAdj}
+\Require
+网络拓扑 $G(V, E)$;
+业务量需求集合 $D$;
+步骤2算出来的路径集合 $P_{in}$;
+\Ensure
+调整后的路径集合 $AP$;
+\State {把业务按照值$\frac{bw_d}{\sqrt{|p_d|}}$进行降序排序}
+\For{each traffic demand $d \in D$}
+\If{$rp_{d} \ge  bw_d$ }
+\State{把路径 $p_d$加入到$AP$中}
+\State{在图G(V,E)中更新路径$p_d$所经过链路的剩余带宽}
+\Else
+\State{$G^{'}(V^{'},E^{'})=G(V,E)$}
+\For{each link $e \in E^{'}$}
+\If{链路 $e的剩余容量 < bw_d$}
+\State{remove link $e$ from $G^{'}(V^{'},E^{'})$}
+\State {在图$G^{'}(V^{'},E^{'})$中为业务$d$计算最短路径$p$}
+\EndIf
+\If{$\frac{|p|}{|p_d|}\le \delta$}
+  \State{把路径 $p$ 加入到 $AP$}
+  \State{在图$G^{'}(V^{'},E^{'})$中更新路径$p$所经过链路的剩余带宽}
+  \State{$G(V, E)=G^{'}(V^{'},E^{'})$}
+ \EndIf
+\EndFor
+\EndIf
+\EndFor
+\Return {$AP$}
+\end{algorithmic}
+\end{algorithm}
 \subsection{仿真实验分析}
