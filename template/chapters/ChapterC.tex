@@ -394,7 +394,7 @@ $\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其
 \end{equation}
   从（）（），我们可以看到，如果一条链路上承载的流量大小超过了这条链路上的容量大小，那么这条链路上的权重在下一次迭代之前就会增加1,对于其他的流量满足约束的链路吗，其权重不会改变，（）（）可以看到，如果使用（）的步长更新方法，LR-PROA仅仅只需要一次迭代就能够得到例子中（）最优的权重，实验表明，这种粗粒度的更新操作大大的减小了算法的收敛迭代次数，从而大大缩短算法运行时间。
 \subsubsection{随机更新策略}
-  拉格朗日松弛法将原问题分解成了一个个独立的最短路径问题，这样使得算法可以并行化进行设计，但是由于个个子问题独立分离，使得每个问题再求最短路径时都是贪心的，这样可能会使得大量业务抢占同一批链路，造成拥塞，一旦拥塞，链路的权重增加，又会使得大量的业务放弃这一批链路，去抢占其他链路，这样恶性循环，使得算法难以收敛，比如图（）中的例子。
+  拉格朗日松弛法将原问题分解成了一个个独立的最短路径问题，这样使得算法可以并行化进行设计，但是由于个个子问题独立分离，使得每个问题再求最短路径时都是贪心的，这样可能会使得大量业务抢占同一批链路，造成拥塞，一旦拥塞，链路的权重增加，又会使得大量的业务放弃这一批链路，去抢占其他链路，而这些链路由于权重过分增加，造成没有业务去选择他们，使得链路利用出现浪费，甚至会造成其他链路发生拥塞，这样出现恶性循环，使得算法难以收敛，另外，由上一节的分析为了最求收敛快速，我们简单地将补偿设置为\frac{1}{|\beta c_{ij}-\sum\limits_{d \in D} x_{ij}^d bw_d|}，就是对把每一个超过容量约束的边简单地增加一，这样粗粒度的增加，可能会加重上面讨论的拥塞循环，考察如图（）中的例子。
 \begin{figure}
 \setlength{\belowcaptionskip}{-0.1cm}
   \begin{center}
@@ -403,5 +403,30 @@ $\{T_{1j}, T_{2j}, \cdots, T_{ij}, \cdots, T_{kj}\}$都在bock$j$上执行，其
   \caption{{\footnotesize{An illustrative example for link weights update}}}
   \label{IterNum}
 \end{figure}
-
+ 如上图所示，假设有存在两个业务$d_1$和$d_2$,其中$d_1$的源节点为$A$,目的节点为$H$,其流量大小为$5$;$d_2$的源节点为$B$,目的节点为$G$,其流量大小为$5$,开始时两个都分别贪心计算最短路径，$d_1$选择路径$A-C-E-G$,$d_2$选择路径$B-C-E-G$,这样的话，链路$C-E$和$E-G$出现拥塞，表（）展示了这个迭代过程,图（）中最优的选择是让其中一个业务经过边$C-E$进行中继$,另一个业务经过边$D-F$进行中继。
+\begin{table}[t]
+\newcommand{\tabincell}[2]{\begin{tabular}{@{}#1@{}}#2\end{tabular}}
+\setlength{\abovecaptionskip}{0.2cm}
+  \centering
+ \scriptsize{
+ \renewcommand{\tabcolsep}{0.09cm}
+ \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{| c | c | c |}
+    \hline
+     Iteration number & \tabincell{l}{Calculated paths for \\the two demands} & Path weights
+\\ \hline
+0 & \tabincell{l}{A-C-E-H \\ B-C-E-G} & \tabincell{l}{3(1+1+1) \\ 3(1+1+1)}   \\ \hline
+1 & \tabincell{l}{A-D-F-H \\ B-D-E-G } & \tabincell{l}{3(2+1+1) \\ 3(2+1+1)}   \\ \hline
+2 & \tabincell{l}{A-C-E-H \\ B-C-E-G} & \tabincell{l}{3(1+2+1) \\ (1+2+2)} \\ \hline
+3 & \tabincell{l}{A-C-E\\ B-C-E} & \tabincell{l}{(1+3) \\ (1+3)} \\ \hline
+4 & \tabincell{l}{A-D-E \\ B-D-E} & \tabincell{l}{(1+3) \\ (1+3)} \\ \hline
+5 & \tabincell{l}{A-D-E \\ B-D-E} & \tabincell{l}{(1+4) \\ (1+4)}\\ \hline
+6 & \tabincell{l}{A-C-E \\ B-C-E} & \tabincell{l}{(1+4) \\ (1+4)}\\ \hline
+7 & \tabincell{l}{ ...\\ ...} & \tabincell{l}{... \\ ...}\\ \hline
+\end{tabular}
+ \vskip 0.2 cm
+  \caption{The illustration for the Laglanrian iteration process}
+  \label{Iterprocess}
+}
+\end{table}
 \subsection{仿真实验分析}
