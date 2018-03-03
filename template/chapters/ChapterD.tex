@@ -13,7 +13,7 @@
 \subsection{EONs中动态RSA问题}
   在动态场景中，业务的到达时间和服务时间都是随机的，当业务到达网络时，SDN控制层需要找到可行的路径，并且为路径分配合适的频谱资源。由于EON的物理限制，RSA问题的解需要满足以下限制：
 %\begin{enumerate}[(i)]
-第一，传输距离限制：光信号的传输质量会随着传输距离的增加而下降，为了在目的点顺利恢复光信号，光链路的传输距离需要小于一个阈值$D_max$,为了简化设计，本文假设每一条链路的长度相同，都是一个单位，那么传输路径的跳数需要小于阈值$D_max$。
+第一，传输距离限制：光信号的传输质量会随着传输距离的增加而下降，为了在目的点顺利恢复光信号，光链路的传输距离需要小于一个阈值$W_max$,为了简化设计，本文假设每一条链路的长度相同，都是一个单位，那么传输路径的跳数需要小于阈值$D_max$。
 第二，频谱连续性限制：每条光连接的频谱从它的源节点到它的目的节点 ,在所经过的链路上保持不变。
 第三，频谱不重叠限制：同一光纤链路中的频谱不能分配给不同的光路。
 第四，频谱邻近限制：频谱邻近约束保证分配给一个光路径的频谱必须是一个连续的部分。
@@ -107,7 +107,7 @@ $AP$:加入业务的路径集合;
 \State{return}
 \EndIf
 \State {用$(bid,tid,rid)$ 映射到的源点标号$sid$}
-\If{$Dist[lid][sid][e.head]>round&&Dist[lid][sid][e.tail]+1==round$}
+\If{$Dist[lid][sid][e.head]>round $\&\&$ Dist[lid][sid][e.tail]+1==round$}
 \State {$Dist[gid][sid][e.head] \leftarrow round$}
 \EndIf
 \Return
@@ -133,8 +133,41 @@ $AP$:加入业务的路径集合;
 \Return
 \end{algorithmic}
 \end{algorithm} 
- $kernel_bfs_update$
+ 在$kernel_bfs_update$中，其主要逻辑和$kernel_bfs_extend$一样，在进行更新判断的时候，判断当前边的头节点是否是尾节点的上一层（Dist[lid][sid][e.head]==Dist[lid][sid][e.tail]+1）如果是的话，那么头节点就有资格作为尾节点的前驱节点，于是进行前驱更新操作。
+  介绍完了两个kernel之后，下图为整个并行BFS的算法流程：
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{并行bfs计算}}
+\label{ParaSPC}
+\Require
+	 业务需求集合$TD$;
+      分层图链路集合$E$;
+\Ensure {业务需求的最短路径集合$P$}
+\State {将业务根据速率和源节点重新组合成业务分组集合$D$}
+\For {$D_r \in D$}
+\For {$d \in D_r$}
+\For {$l \in L_r$}
+\State {Dist[l][d.s][d.s]=0}
+\EndFor
+\EndFor
+\EndFor
+\State {新建$|R|$个流，组成集合$S$}
+\State {$round \leftarrow$ 1}
+\While{$round<=W_max$}
+\For{r in R}
+\State {在流$S_r$上发射 kernel\_bfs\_extend($E$, $Dist$,$r$,$round$)}
+\EndFor
+\State{round=round+1}
+\EndWhile
+\For{r in R}
+\State {在流$S_r$上发射 kernel\_bfs\_update($E$, $Dist$,$r$,$round$)}
+\EndFor
+\State {reconstruct the shortest paths for the traffic demands based on predecessor information record in $Pre$, and put the paths to set $P$}
+\Return {$P$}
+\end{algorithmic}
+\end{algorithm}
 \section{带权图情况下的GPU算法设计}
+  
 \subsection{带跳数限制的最短路算法}
 \subsection{点并行的bellman-ford算法}
 \subsection{并行层次}
