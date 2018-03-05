@@ -172,7 +172,30 @@ while循环结束后，算法发射$kernel\_bfs\_update$进行前驱节点记录
   在实际应用场景中，我们常常需要将不同的链路设置为不同的代价，因为链路的延迟，租用费用可能不同，所以有必要考虑链路带权情况下的优化设计，算法优化的目标是业务使用的链路总体代价最小化。本节将逐步分析和设计适用于带权图的分层网络GPU并行算法。
 \subsection{带跳数限制的最短路算法}
   带跳数约束的BFS路由，由于没有考虑链路的权重差异，把所有链路的权重看作一样，所有BFS路由的优化目标就是跳数，BFS就是寻找跳数最短的路径，跳数约束只是使得BFS算法提前结束。但是在带权的链路情况下，路由的优化目标是最小化链路代价和，也就是寻找一条代价最小的满足跳数约束的路径，跳数越短并不意味则代价越小，代价越小也不意味着跳数越小，这使得带权情况下比无权情况更加复杂。
-  为了说明带权带跳数约束下的路由算法，我们介绍一些符号，在图$N(V,E)$中，有点$i \in V$,和点$j \in V$，假设集合$P_{ijk}$表示点$i$到点$j$的所有跳数为$k$的路径所组成的集合，设$p_{ijk}^*$为集合$P_{ijk}$当中代价最小的那一条路径，即$p_{ijk}^* =arg min\limits_{p_i \in P_{ijk}}{p_i}$，我们设最小代价数组为$Price$，$Price$为三维数组，其中$Price[i][j][k]=|p_{ijk}^*|$，即$Price[i][j][k]$表示为$p_{ijk}^*$的代价，也就是说$Price[i][j][k]$表示$i$到$j$的跳数为$k$跳的最小代价路径的代价。对点$i$，边集合$PreEdg_i$点$i$的入边组成的集合，点集合$PreNode_i$表示点$i$的入节点所组成的集合。
+  为了说明带权带跳数约束下的路由算法，我们介绍一些符号，在图$N(V,E)$中，有点$i \in V$,和点$j \in V$，假设集合$P_{ijk}$表示点$i$到点$j$的所有跳数为$k$的路径所组成的集合，设$p_{ijk}^*$为集合$P_{ijk}$当中代价最小的那一条路径，即$p_{ijk}^* =\arg\limits_{p}\min\limits_{p \in P_{ijk}}\{Price\_Of(p)\}$，我们设最小代价数组为$Price$，$Price$为三维数组，其中$Price[i][j][k]=Price\_Of(p_{ijk}^*）$，即$Price[i][j][k]$表示为$p_{ijk}^*$的代价，也就是说$Price[i][j][k]$表示$i$到$j$的跳数为$k$跳的最小代价路径的代价。对点$i$，边集合$PreE_i$点$i$的入边组成的集合，点集合$PreN_i$表示点$i$的入节点所组成的集合。
+  有了上面的符号介绍后，假设业务的源节点为$s$，下面给出一个动态规划递推式，其中$w_{nj}$表示边$(n,j)$的代价大小：
+\begin{equation}\label{FlowConv2}
+\begin{split}
+Price[i][j][k]
+=\begin{cases}
+\min\limits_{n \in PreN_i}{Price[i][n][k-1]+w_{nj}} & \text{if $k>0$}\\
+0 & \text{if $k==0$ and $i==s $} \\
+\infty &{otherwise}
+\end{cases}
+\end{split}
+\end{equation}
+ 设$p_{ijk}^*$为点$i$到$j$的跳数为$k$的最小代价路径，由于点$j$的前驱节点只可能是那些属于集合$PreN_j$的点，点$j$的前驱边只可能是集合$PreE_j$中的某一条边，那么最优路径$p_{ijk}^*$中的第$k$条边一定属于集合$PreE_j$，于是递推式中我们遍历了这些边，另外，设经过边$e \in PreE_j$到达$j$的跳数为$k$的最优路径为$p{ijk}^e$，那么根据Price的定义我们可以得到$Price\_Of($p{ijk}^e$)=Price[i][e.head][k-1]+w_e$，其中，$e.head$表示边的头结点，也就是点$i$的对应于边$e$的前驱节点。那么最优路径$p_{ijk}^*=\arg\limits_{p_e}\min\limits_{e \in PreE}{Price_Of(p_e)}$，相应的最优代价$Price[i][j][k]=\min\limits_{e \in PreE}{Price_Of(p_e)$，也就是$\min\limits_{n \in PreN_i}{Price[i][n][k-1]+w_{nj}}$。注意边界情况下($k==0$)，由于除了源节点自己之外，源节点到其他节点的跳数不可能是零，所以开始时需要设置代价为无穷大，而源节点到他自己距离设置为0。
+  上面的动态规划递推式可以求得一个点到任意点的跳数为1到$k$的最优路径，而我们是要求得在跳数限制下的最优代价路径，我们需要对求得的动态规划解进行处理，设二维数组$OPCost$表示跳数限制下的最优路由代价值，那么跳数限制约束下的点$i$到点$j$的最小代价路径的代价为$OPCost[i][j]$，可以得到下面的表达式：
+
+%\begin{equation}
+%	Price[i][j][k]
+%=\begin{cases}
+%1 &\text{if $k>1$}\\
+%0    &\text{if $k==0 \and \and i==s$}\\
+%INF &{ohterwise}
+%\end{cases}
+%\end{equation}
+		
 \subsection{并行动态规划算法}
 \subsection{并行层次}
 \subsection{GPU上kernel设计}
