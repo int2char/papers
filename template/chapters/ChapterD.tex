@@ -169,34 +169,76 @@ $AP$:加入业务的路径集合;
  算法开始时先将业务按照速率的不同进行划分，再将业务按照源节点的不同划分成不同的业务组集合$D$，比如，$D_r \in D$表示速率为$r$的业务组集合，$d_{rs} \in D_r$表示速率为$r$的源节点标号为$s$的业务组。划分好业务组之后，就开始初始化距离数组，将速率对应的所有分层图上的源节点距离初始化为0，这是一个三层的for循环，第一层遍历速率标号，第二层遍历源节点标号，第三层遍历速率所对应的分层图标号；初始化$Dist$数组后，在发射kernel之前需要先新建$|R|$个GPU流，不同的流将对不同速率的业务进行计算。$round$为扩展的层数标记，开始时$round$初始化为1。while循环中进行扩展操作，其中$W_{max}$为跳数限制，最大跳数不能超过$W_{max}$,每一次扩展操作只会使得路径长度增加一跳，所以最多只能循环$W_{max}$次。while循环中for循环用来发射不同的流，因为发射不同流的kernel是异步操作，for循环不会去等待上kernel结束了才去执行下一个kernel，所以可以认为所有kernel都是同时间发射的。
 while循环结束后，算法发射$kernel\_bfs\_update$进行前驱节点记录操作，最后根据这些前驱信息，算法重新恢复出路径，组成路径集合$P$，算法结束。
 \section{带权图情况下的GPU算法设计}  
-  在实际应用场景中，我们常常需要将不同的链路设置为不同的代价，因为链路的延迟，租用费用可能不同，所以有必要考虑链路带权情况下的优化设计，算法优化的目标是业务使用的链路总体代价最小化。本节将逐步分析和设计适用于带权图的分层网络GPU并行算法。
+  在实际应用场景中，我们常常需要将不同的链路设置为不同的代价，因为链路的延迟，租用费用可能不同，所以有必要考虑链路带权情况下的优化设计，算法优化的目标是业务使用的链路总体代价最小化，为了简化问题模型，本节只讨论链路代价为正值的情况。本节将逐步分析和设计适用于带权图的分层网络GPU并行算法。
 \subsection{带跳数限制的最短路算法}
   带跳数约束的BFS路由，由于没有考虑链路的权重差异，把所有链路的权重看作一样，所有BFS路由的优化目标就是跳数，BFS就是寻找跳数最短的路径，跳数约束只是使得BFS算法提前结束。但是在带权的链路情况下，路由的优化目标是最小化链路代价和，也就是寻找一条代价最小的满足跳数约束的路径，跳数越短并不意味则代价越小，代价越小也不意味着跳数越小，这使得带权情况下比无权情况更加复杂。
-  为了说明带权带跳数约束下的路由算法，我们介绍一些符号，在图$N(V,E)$中，有点$i \in V$,和点$j \in V$，假设集合$P_{ijk}$表示点$i$到点$j$的所有跳数为$k$的路径所组成的集合，设$p_{ijk}^*$为集合$P_{ijk}$当中代价最小的那一条路径，即$p_{ijk}^* =\arg\limits_{p}\min\limits_{p \in P_{ijk}}\{Price\_Of(p)\}$，我们设最小代价数组为$Price$，$Price$为三维数组，其中$Price[i][j][k]=Price\_Of(p_{ijk}^*）$，即$Price[i][j][k]$表示为$p_{ijk}^*$的代价，也就是说$Price[i][j][k]$表示$i$到$j$的跳数为$k$跳的最小代价路径的代价。对点$i$，边集合$PreE_i$点$i$的入边组成的集合，点集合$PreN_i$表示点$i$的入节点所组成的集合。
+  为了说明带权带跳数约束下的路由算法，我们介绍一些符号，在图$N(V,E)$中，有点$i \in V$,和点$j \in V$，假设集合$P_{ijk}$表示点$i$到点$j$的所有跳数为$k$的路径所组成的集合，设$p_{ijk}^*$为集合$P_{ijk}$当中代价最小的那一条路径，即$p_{ijk}^* =\arg\min\limits_{p \in P_{ijk}}\{Price\_Of(p)\}$，我们设最小代价数组为$Price$，$Price$为三维数组，其中$Price[i][j][k]=Price\_Of(p_{ijk}^*）$，即$Price[i][j][k]$表示为$p_{ijk}^*$的代价，也就是说$Price[i][j][k]$表示$i$到$j$的跳数为$k$跳的最小代价路径的代价。对点$i$，边集合$PreE_i$点$i$的入边组成的集合，点集合$PreN_i$表示点$i$的入节点所组成的集合。
   有了上面的符号介绍后，假设业务的源节点为$s$，下面给出一个动态规划递推式，其中$w_{nj}$表示边$(n,j)$的代价大小：
-\begin{equation}\label{FlowConv2}
+\begin{equation}\label{dynamic}
 \begin{split}
 Price[i][j][k]
 =\begin{cases}
 \min\limits_{n \in PreN_i}{Price[i][n][k-1]+w_{nj}} & \text{if $k>0$}\\
-0 & \text{if $k==0$ and $i==s $} \\
+0 & \text{if $k=0$ and $i=s $} \\
 \infty &{otherwise}
 \end{cases}
 \end{split}
 \end{equation}
- 设$p_{ijk}^*$为点$i$到$j$的跳数为$k$的最小代价路径，由于点$j$的前驱节点只可能是那些属于集合$PreN_j$的点，点$j$的前驱边只可能是集合$PreE_j$中的某一条边，那么最优路径$p_{ijk}^*$中的第$k$条边一定属于集合$PreE_j$，于是递推式中我们遍历了这些边，另外，设经过边$e \in PreE_j$到达$j$的跳数为$k$的最优路径为$p{ijk}^e$，那么根据Price的定义我们可以得到$Price\_Of($p{ijk}^e$)=Price[i][e.head][k-1]+w_e$，其中，$e.head$表示边的头结点，也就是点$i$的对应于边$e$的前驱节点。那么最优路径$p_{ijk}^*=\arg\limits_{p_e}\min\limits_{e \in PreE}{Price_Of(p_e)}$，相应的最优代价$Price[i][j][k]=\min\limits_{e \in PreE}{Price_Of(p_e)$，也就是$\min\limits_{n \in PreN_i}{Price[i][n][k-1]+w_{nj}}$。注意边界情况下($k==0$)，由于除了源节点自己之外，源节点到其他节点的跳数不可能是零，所以开始时需要设置代价为无穷大，而源节点到他自己距离设置为0。
+ 设$p_{ijk}^*$为点$i$到$j$的跳数为$k$的最小代价路径，由于点$j$的前驱节点只可能是那些属于集合$PreN_j$的点，点$j$的前驱边只可能是集合$PreE_j$中的某一条边，那么最优路径$p_{ijk}^*$中的第$k$条边一定属于集合$PreE_j$，于是递推式中我们遍历了这些边，另外，设经过边$e \in PreE_j$到达$j$的跳数为$k$的最优路径为$p_{ijk}^e$，那么根据Price的定义我们可以得到$Price\_Of(p{ijk}^e)=Price[i][e.head][k-1]+w_e$，其中，$e.head$表示边的头结点，也就是点$i$的对应于边$e$的前驱节点。那么最优路径$p_{ijk}^*=\arg\min\limits_{e \in PreE}{Price_Of(p_e)}$，相应的最优代价$Price[i][j][k]=\min\limits_{e \in PreE}{Price_Of(p_e)}$，也就是$\min\limits_{n \in PreN_i}{Price[i][n][k-1]+w_{nj}}$。注意边界情况下($k==0$)，由于除了源节点自己之外，源节点到其他节点的跳数不可能是零，所以开始时需要设置代价为无穷大，而源节点到他自己距离设置为0。
   上面的动态规划递推式可以求得一个点到任意点的跳数为1到$k$的最优路径，而我们是要求得在跳数限制下的最优代价路径，我们需要对求得的动态规划解进行处理，设二维数组$OPCost$表示跳数限制下的最优路由代价值，那么跳数限制约束下的点$i$到点$j$的最小代价路径的代价为$OPCost[i][j]$，可以得到下面的表达式：
-
-%\begin{equation}
-%	Price[i][j][k]
-%=\begin{cases}
-%1 &\text{if $k>1$}\\
-%0    &\text{if $k==0 \and \and i==s$}\\
-%INF &{ohterwise}
-%\end{cases}
-%\end{equation}
-		
-\subsection{并行动态规划算法}
+\begin{equation}\label{best}
+\begin{split}
+OPCost[i][j]=\min\limits_{k \in W_{max}}{Price[i][j][k]}
+\end{split}
+\end{equation}
+ 假设满足跳限约束的最优代价路径为$p_{ij}^*$，假设路径$p_{ij}^*$的跳数为$h$，$h \in [1,W_{max}]$，显然$p_{ij}^*=p_{ijh}$，但是实际上我们并不知道$h$的值，所以我们从$[1,W_{max}]$对$h$进行遍历，那么$p_{ij}^*$肯定是其中代价最小的一条，所以$p_{ij}^*=\min\limits_{k \in W_{max}}{Price_Of(p_{ijk}^*)}$，同样，$OPCost[i][j]=\min\limits_{k \in W_{max}}{Price[i][j][k]}$。
+ 观察动态规划递推式，可以看到，在递推过程不会去记录路径，这样求得路径可能会经过重复的点，但是，最优路径$p_{ij}^*$中是不可能经过重复节点的，下面本文进行证明。首先，路径跳数$h<4$的路径是不可能经过重复的节点，我们讨论$h>=4$时的情况，如果路径重复经过了一个点，那么路径中一定存在一个环，如下图所示，这个存在环的路径为$L_1-L_2-L_3-L_2-L_4$，假设链路$L_2$的跳数为$h_2$，代价为$C_2$，由于链路的代价都是正数，所以$C_2>0$，那么存在一条跳数为$t=h-h_2$的，代价为$OPCost[i][j]-C_2$的由$i$到$j$的路径$L_1-L_2-L_4$，而这条路径的代价肯定小于等于$Price\_Of(p_{ijt})$，即$OPCost[i][j]-C_2<=Price\_Of(p_{ijt})<=OPCost[i][j]$，进一步得到$OPCost[i][j]-C_2<=OPCost[i][j]$，这与$C_2>0$矛盾，所以最优路径不可能经过重复的节点。
+ \begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/circle.pdf}}
+    \end{center}
+  \caption{{\footnotesize{无环证明}}}
+  \label{prof}
+\end{figure*}
 \subsection{并行层次}
+\subsection{并行动态规划算法}
+ 上一节提出了动态规划模型，证明了算法的正确性，本节我们讨论这个动态规划算法在GPU上的并行设计框架，以及分层图和不同速率的并行层次设计。
+ 单个图上的动态规划的串行执行过程如下伪代码所示：
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{串行动态规划算法}}
+\Require
+	 点的入边集合$PreE$;
+      点的入点集合$PreN$;
+	 源节点$s$;
+\Ensure {最优代价数组$Price$;最优前驱节点数组$Pre$;}
+\For {$k \in [1,W_{max}]$}
+\For {$v \in V$}
+\State {Price[s][v][k]=$\min\limits_{n \in PreN_v}{Price[s][n][k-1]+w_{nv}}$}
+\State {Pre[i][j][k]=$\arg\min\limits_{n \in PreN_v}{Price[s][n][k-1]+w_{nv}}$}
+\EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+  算法循环$W_{max}$次，每一次循环中对每一个点进行对应的$Price$数组进行更新，而这些更新操作是相互独立的，所以，可以进行并行设计，对每一个点的$Price$数组更新操作开辟一个线程进行计算，这个线程遍历当前点的前驱边，寻找最优的那一条前驱边，这里的并行粒度只有图的点数$|N|$，但是考虑到不同个业务和不同的分层图上计算也是并行的，总的并行粒度为$|N|*|D|*|R|$，这样需要开辟大量的线程，充分利用GPU上的SIMT计算资源。
+  下面考虑单个速率情况下的并行框架，如下图所示，动态规划算法和BFS单个速率情况下的并行类似，只是BFS那里的对每一条边并行的扩展操作被替换成了对每一个点并行的$Price$数组更新操作。
+ \begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/DRK.pdf}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+和**同样，对不同速率的业务，本文依然采用不同的流进行并行，其并行过程如下所示：
+ \begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/BBK.pdf}}
+    \end{center}
+  \caption{{\footnotesize{BBK}}}
+  \label{prof}
+\end{figure*}
 \subsection{GPU上kernel设计}
 \section{实验仿真分析}
