@@ -92,7 +92,7 @@ $AP$:加入业务的路径集合;
   \label{bfssteam}
 \end{figure*}
  我们为每一个速率建立一个stream来负责这个速率的业务计算，假设业务一个有$|R|$个不同速率，那么需要建立$|R|$个stream，多个kernel同时执行，充分利用GPU的SMIT资源，当SIMT资源足够时，每个kernel将并行执行，当SIMIT不足时，不同的kernel之间可以进行快速的切换，以达到隐藏延迟的效果。另外，每个速率的内部业务计算的并行如（）所讨论的那样。
-\subsection{kernel设计}
+\subsection{GPU上kernel设计}
   和**中讨论不一样，在bfs的并行中不会存在前驱节点更新的同步问题，但是，我们依然需要两个kernel函数，这是因为扩展kernel需要执行多次，如果扩展和更新同时执行，那么更新也会执行多次，这会增多内存访问，所以我们把两个操作分成两个kernel，一个$kernel_bfs_extend$进行边的扩展操作，一个$kernel_bfs_update$进行前驱节点的更新操作，其中$kernel_bfs_extend$需要多次调用，但是$kernel_bfs_update$只需要在最后执行一次。
 \begin{algorithm}[t]
 \begin{algorithmic}[1]
@@ -171,8 +171,9 @@ while循环结束后，算法发射$kernel\_bfs\_update$进行前驱节点记录
 \section{带权图情况下的GPU算法设计}  
   在实际应用场景中，我们常常需要将不同的链路设置为不同的代价，因为链路的延迟，租用费用可能不同，所以有必要考虑链路带权情况下的优化设计，算法优化的目标是业务使用的链路总体代价最小化。本节将逐步分析和设计适用于带权图的分层网络GPU并行算法。
 \subsection{带跳数限制的最短路算法}
-  
-\subsection{点并行的bellman-ford算法}
+  带跳数约束的BFS路由，由于没有考虑链路的权重差异，把所有链路的权重看作一样，所有BFS路由的优化目标就是跳数，BFS就是寻找跳数最短的路径，跳数约束只是使得BFS算法提前结束。但是在带权的链路情况下，路由的优化目标是最小化链路代价和，也就是寻找一条代价最小的满足跳数约束的路径，跳数越短并不意味则代价越小，代价越小也不意味着跳数越小，这使得带权情况下比无权情况更加复杂。
+  为了说明带权带跳数约束下的路由算法，我们介绍一些符号，在图$N(V,E)$中，有点$i \in V$,和点$j \in V$，假设集合$P_{ijk}$表示点$i$到点$j$的所有跳数为$k$的路径所组成的集合，设$p_{ijk}^*$为集合$P_{ijk}$当中代价最小的那一条路径，即$p_{ijk}^* =arg min\limits_{p_i \in P_{ijk}}{p_i}$，我们设最小代价数组为$Price$，$Price$为三维数组，其中$Price[i][j][k]=|p_{ijk}^*|$，即$Price[i][j][k]$表示为$p_{ijk}^*$的代价，也就是说$Price[i][j][k]$表示$i$到$j$的跳数为$k$跳的最小代价路径的代价。对点$i$，边集合$PreEdg_i$点$i$的入边组成的集合，点集合$PreNode_i$表示点$i$的入节点所组成的集合。
+\subsection{并行动态规划算法}
 \subsection{并行层次}
-\subsection{kernel设计}
+\subsection{GPU上kernel设计}
 \section{实验仿真分析}
