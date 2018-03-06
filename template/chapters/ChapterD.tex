@@ -147,7 +147,14 @@ $AP$:加入业务的路径集合;
 \For {$D_r \in D$}
 \For {$d_{rs} \in D_r$}
 \For {$l \in L_r$}
-\State {Dist[l][s][s]=0}
+\For {$v \in V$}
+\If {$v==s$}
+\State {$Dist[l][s][v]\leftarrow$ 0}
+\Else
+\State {$Dist[l][s][v]\leftarrow \infty $}
+\EndIf
+\State {$Pre[l][s][v]\leftarrow -1 $}
+\EndFor
 \EndFor
 \EndFor
 \EndFor
@@ -241,4 +248,66 @@ OPCost[i][j]=\min\limits_{k \in W_{max}}{Price[i][j][k]}
   \label{prof}
 \end{figure*}
 \subsection{GPU上kernel设计}
+ 动态规划的GPU代码设计如下：
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{\small{kernel\_dynamic\_update($PE$,$rid$,$k$)}}
+\label{KernelDynamic}
+\State {$bid \leftarrow$ block ID}
+\State {$tid \leftarrow$ thread ID}
+\State {用$(bid,tid,rid)$ 映射到边点的标号$nid$}
+\State {用$(bid,tid,rid)$ 映射到边源节点的标号$sid$}
+\State {用$(bid,tid,rid)$ 映射到分层图标号$lid$}
+\For {$e \in PE[lid][nid]$}
+\If{$e.avalible>0$}
+\If {$Price[lid][sid][nid][k]<Price[lid][sid][e.s][k-1]+e.weight$}
+\State{$Price[lid][sid][nid][k]=Price[lid][sid][e.s][k-1]+e.weight$}
+\State{$Pre[lid][sid][nid][k]=e.s$}
+\EndIf
+\EndIf
+\EndFor
+\Return
+\end{algorithmic}
+\end{algorithm} 
+ 在$kernel_dynamic_update$中，输入$PE$是一个二维的集合数组，比如，$PE[2][3]$表示第2个分层图上点3的入边集合。$Price$是预先分配的代价数组，他是一个三维数组，第一维表示当前代价数组对应的分层图标号，第二维度表示源节点，第三维度表示目的节点，第四维度表示路径的跳数，比如$Price[4][3][10][5]$=7表示在第4个分层图上，点3到10的跳数为5的最优路径代价为7，初始时,当跳数等于0时，除了源节点代价被初始化为0之外，其他的距离都被初始化为无穷大。
+$Pre$数组是前驱数组用以记录前驱信息来恢复路径，$Pre$数组和$Price$数组一样，是一个四维数组，$Pre[4][3][10][5]$=50表示在第4个分层图上，点3到10的跳数为5的最优路径的前驱节点(也就是路径上的倒数第二个点)为点50。$rid$表示当前kernel负责的计算的业务速率标号，他是区分不同流的标记，$rid$不同表示执行kernel的流不同。$k$表示当前扩展的层数，也就是跳数。算法开始时先进行一系列映射操作，将线程映射到点标号$eid$,当前所在分层图标号$lid$,以及源节点标号$sid$，映射完成后就可以进行Price数组的更新了，也就是要去寻找最优的入边，算法遍历点的所有入边，由于动态情况下，边的可用状态可能发生变化，找到边之后，需要判断这条边是否可用，如果不可用则跳过这条边，反之，就判断更新条件是否成立($Price[lid][sid][nid][k]<Price[lid][sid][e.s][k-1]+e.weight$)，如果条件成立则说明这条入边比之前的要好，经过这条边到达当前点的路径代价更小，所有要更新Price数组，同时为了后面恢复路径需要记录前驱信息在数组$Pre$中。
+\begin{algorithm}[t]
+\begin{algorithmic}[1]
+\caption{{并行动态规划的计算}}
+\label{ParaSPC}
+\Require
+	 业务需求集合$TD$;
+      各个分层图前驱链路集合$PE$;
+\Ensure {业务需求的最短路径集合$P$}
+\State {将业务根据速率和源节点重新组合成业务分组集合$D$}
+\For {$D_r \in D$}
+\For {$d_{rs} \in D_r$}
+\For {$l \in L_r$}
+\For {$v \in V$}
+\If {$v==s$}
+\State {$Price[l][s][v][0]\leftarrow$ 0}
+\Else
+\State {$Price[l][s][v][0]\leftarrow \infty $}
+\EndIf
+\State {$Pre[l][s][v][0]\leftarrow -1 $}
+\EndFor
+\EndFor
+\EndFor
+\EndFor
+\State {新建$|R|$个流，组成集合$S$}
+\State {$k \leftarrow$ 1}
+\While{$k<=W_{max}$}
+\For{r in R}
+\State {在流$S_r$上发射 kernel\_dynamic\_update($PE$,$rid$,$k$)}
+\EndFor
+\State{k=k+1}
+\EndWhile
+\State {根据前驱数组$Pre$重建路径，然后把路径加入到集合$P$}
+\Return {$P$}
+\end{algorithmic}
+\end{algorithm}
+ 算法开始时先将业务按照速率的不同进行划分，再将业务按照源节点的不同划分成不同的业务组集合$D$，比如，$D_r \in D$表示速率为$r$的业务组集合，$d_{rs} \in D_r$表示速率为$r$的源节点标号为$s$的业务组。划分好业务组之后，就开始初始化代价数组，将速率对应的所有分层图上的跳数为0的源节点代价初始化为0，这是一个三层的for循环，第一层遍历速率标号，第二层遍历源节点标号，第三层遍历速率所对应的分层图标号；初始化$Price$数组后，在发射kernel之前需要先新建$|R|$个GPU流，不同的流将对不同速率的业务进行计算。$k$为扩展的跳数标记，开始时$k$初始化为1。while循环中进行扩展操作，其中$W_{max}$为跳数限制，最大跳数不能超过$W_{max}$，所以最多只能循环$W_{max}$次。while循环中for循环用来发射不同的流，因为发射不同流的kernel是异步操作，for循环不会去等待上kernel结束了才去执行下一个kernel，所以可以认为所有kernel都是同时间发射的。
 \section{实验仿真分析}
+
+
+
