@@ -1,0 +1,78 @@
+\section{相关技术介绍}
+\subsection{GPU硬件结构与CUDA编程模式}
+本文中的并行算法均在Nvidia GPU上通过CUDA编程模式实现，为了帮助理解本文的并行算法设计思路，我们首先介绍GPU的硬件架构和CUDA 编程模型。
+%%they are a single section
+\subsubsection{CPU与GPU}
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/GPU&CPU.pdf}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+（1）CPU与GPU区别\newline
+上图为CPU和GPU的架构比较，可以看到，CPU和GPU的差异主要有两点 第一，GPU的ALU单元远远多于CPU；第二，GPU 每个核心可用的逻辑控制单元和缓存相对CPU要少很多。CPU 上大面积晶体管是逻辑控制单元和缓存单元，这是因为CPU的设计需要兼容多方面的应用，比如在桌面应用中就具有大量的分支控制操作和存储操作，而真正的数值计算操作却很少，所以CPU 上具有大量的逻辑控制相关的实现，比如分支预测（Branch Prediction），乱序执行（OoO 来满足这些分支控制需求，同时增加缓存大小来加速存储过程，但是这样的设计也使得留给CPU上的计算单元的晶体管面积较少，浮点计算能力较差，现在CPU为了弥补其计算能力得不足，产商常常在同块芯片上集成多个CPU 核心，组成多核处理器，但是这样的设计并不能提高晶体管的利用率。
+GPU最初被设计来进行图像渲染，图像渲染具有高度的并行性，而且大部分操作是浮点计算操作，逻辑控制较少，所以GPU在设计上采用简化控制单元，增加计算单元的设计思想，这使得GPU在进行大规模浮点运算的任务时大大优于CPU的执行速度。
+\newline（2）CPU+GPU异构计算模型\newline
+通过上面的分析可以看到GPU适用于线程数目多，浮点计算密集和逻辑较简单的并行任务，而CPU更加适应与串行任务和分支较多，计算较少的任务。所以在实际中，常常把CPU 和GPU结合起来，使用CPU和GPU两个部分协作共同完成并行计算任务，在这些并行任务中，CPU主要用于逻辑控制部分，而GPU作为一种设备被CPU控制调用来做并行计算工作，这种协同工作模型被称为CPU+GPU异构计算模型。
+如图，所示为CPU+GPU异构计算结构示意图，GPU和CPU通过PCI总线进行连接。CPU调用GPU 执行一共需要以下步骤：
+\newline
+1.把输入数据从CPU主机内存拷贝到GPU的主存DRAM中。\newline
+2.把执行程序加载到GPU上然后执行。\newline
+3.GPU上的程序执行需要从主存中读取数据，为了加快访问速度，数据将通过L1 cache和L2 cache进行缓存。\newline
+4.GPU上程序执行完毕，将结果写在GPU主存中，这时需要将结果重新拷贝会CPU主机端进行处理。\newline
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/yigou.pdf}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+\subsubsection{GPU硬件架构}
+虽然GPU相对于CPU在并行算法方面有很多优势，但是，由于GPU的出现是为了加速图形渲染问题，当想要使用GPU进行图形学之外的通用计算时，我们需要将通用问题转换为图形学问题，并且通过OpenGL或者DirectX等APU来访问GPU，这对普通的开发人员提出了更高的要求，限制了GPU程序的设计自由度，使得GPU通用计算变得困难，
+为了简化GPU的通用计算，降低开发难度。2007年6月，NVIDIA推出CUDA （Compute Unified Device Architecture，统一计算设备架构）。CUDA 不需要借助与其他的图形学API，CUDA采用简单的类c语言进行开发，这使得开发人员可以很容易的进行GPU 的开发。但是，为了设计出高效率的GPU并行程序，开发人员需要掌握GPU架构上的相关知识。
+我们以kepler架构为例子来介绍GPU的硬件架构。图1位kepler的GPU架构模型细节，kepler架构包含两个部分，流处理器阵列（core 部分）和存储系统（memory）部分，kepler架构中的GPU上一共包含15个流多处理器（SM），所有流多处理器共享一个L2缓存。
+（1）流处理器\newline
+我们看到GPU中主要组成部分是SMX，一个SMX（stream mutiprocessor）中含有大量的sp，sp（stream processor）为GPU的计算核心，又称为流处理器，sp 是最基本的处办理单元，指令和任务最终都是sp上处理的，我们可以将在一个SP上执行的流看做一个独立的线程（thread），如果一个GPU 中有更多的SMX，一个SMX 中有更多的sp，那么就意味着这个GPU 在相同的时间内可以并行处理更多的任务。\newline
+（2）线程束（Wrap） \newline
+warp是SM调度和执行的单位，一个SM中的sp（thread）会在物理上被分组成不同的warp，通常一个warp 包含32个sp，同一个warp中的线程执行相同的指令，同一个或者半个warp（在kepler中是半个warp，16个线程）中的线程始终是同步的，这是因为一个（或半个）warp 中的线程共享一个指令调度器，也就说同一个warp中的线程必须等待所有线程都执行完了同一个指令后，才会去执行下一个指令，这样虽然节省了硬件的控制单元的复杂程度，但是也限制了GPU 在处理分支时的并行粒度，如果同一个warp 中的线程出现分支，每个线程执行的分支条件不一样，为了保持同步，不进入分支的空闲sp 也必须等待进入分支的线程执行完毕后才能继续执行，这样使得sp的利用率下降。\newline
+把sp分成一个个的warp组不仅仅是为了节省逻辑控制单元，warp还作为隐藏延迟的基本调度单元，我们知道GPU 的浮点计算能力很强，但是在一些应用中常常需要进行内存的读写操作，这些访存操作需要大量的时间延迟，从而限制了GPU的浮点计算吞吐量，为了充分利用GPU 上大规模的sp，GPU采用warp切换来隐藏这些延迟。
+同一个SM上可以存在多个warp的程序上下文，但是同一时间只能有限个warp 被执行，下图展示了warp上下文的切换过程，假设每个warp执行相同的代码，代码中需要先进行Load 操作，再进行计算操作，Load 操作需要等待4 个时钟周期，而计算操作只需要使用一个时钟周期，W1-W4 表示4个不同的warp 线程组，开始时W1 先执行Load 操作，而load 操作阻塞，这时调度器执行调度将W2 调度到sp 上进行执行，继续阻塞，直到第5个周期，W1的数据已经准备好了可以进行计算操作，当W1 的计算操作结束后，继续切换计算W2，W3，W4。通过这个例子我们可以看到GPU 上的warp切换能够很好得隐藏延迟，提高sp 的利用率。\newline
+（3）存储器模型\newline
+GPU中的每个SM中含有一定数量的寄存器，共享内存，常量内存，纹理内存。寄存器用来存储程序执行中的临时变量，同一个SM 中的线程都能够访问共享内存，共享内存的访存速度大大高于主存的访存速度，所以在GPU并行代码设计时，我们常常先把频繁访问的数据提取到共享内存中，以减小延迟。另外，将中间结果存储在共享内存中，以减小对主存的访问，但是共享内存的大小是有限的，在kepler架构中共享内存的大小为64KB。常量内存是用来缓存计算时需要的一些常量，常量内存为只读数据，用常量内存来替换全局内存可以有效地减少内存带宽占用，常量内存大小为48KB。 纹理内存是一种特殊的只读缓存，纹理内存是专门为图形应用程序设计的，在一些特殊的具有大量空间局部性的内存访问模式中能够提升性能并且减少内存流量。\newline
+（4）流多处理器细节\newline
+通过上面对sp，warp和存储器的介绍，我们再分享下kepler架构下的SMX 细节。从图中，可以看到，kepler架构下的SMX中包含192 个单精度的CUDA core，64个双精度的单元（DP unit）和32个SFU(Special Function Unit, 特殊函数单元)，32个存储（load/store）单元，其中SFU用来执行超越函数、插值以及其他特殊运算。Kepler的每个SM包含4 个warp scheduler和8 个instruction dispatchers，使得每个SM 可以同时执行4个warp，每个warp 中可以有两条指令流，这也是为什么kepler架构中线程是以半个warp为单位同步的。Kepler K20X（compute capability 3.5）每个SM 可以同时调度64 个warp共计2048 个thread，而kepler 架构中一共有15个SMX，也就是说，同一时刻最大可以支持30720个线程在GPU上调度执行，所以GPU的并行能力相当强大。\newline
+(5)执行模型\newline
+GPU采用了SIMT(Single Instruction ,Mutiple Thread)执行模型，SIMT是对SIMD的一种改进。在CPU的SIMD中，向量宽带是受限的，在Intel的SSE指令集中，一条SSE的指令宽带为128bit，一次可以处理4个单精度浮点数，或者两个双精度浮点数，如果要用SSE指令处理一个单精度浮点数构成的数组，必须将数组按4个一组的方式进行打包，然后才能交给CPU进行处理。但是在CUDA的模型中，我们为相同的指令产生不同的线程，这些线程的数量可以自由设置，在kepler架构中，同一时刻GPU上可以调度执行30720个线程，这比CPU的SIMD的并行粒度高很多。\newline
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/arc.png}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/smx.png}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+\begin{figure*}
+\setlength{\belowcaptionskip}{-0.5cm}
+  \begin{center}
+    {\includegraphics[width=1 \textwidth]{figures/warpsketch.pdf}}
+    \end{center}
+  \caption{{\footnotesize{drk}}}
+  \label{drk}
+\end{figure*}
+\subsubsection{CUDA编程模式}
+（1）CUDA C的程序结构
+CUDA 是一种CPU和GPU的异构计算模型，CUDA的应用程序被分为两个部分，一部分为主机端的代码，一部分为设备端的代码，主机端的代码在主机CPU上执行，主机负责调度GPU设备执行设备端代码。一个主机可以对应多个GPU设备。
+
+
+\subsection{SDN技术介绍}
