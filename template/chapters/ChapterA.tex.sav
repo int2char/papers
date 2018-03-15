@@ -1,0 +1,16 @@
+% !Mode:: "TeX:UTF-8"
+
+%\chapter{绪论}
+\section{绪论}
+\subsection{研究背景与意义}
+近几年被广泛研究的软件定义网络(Software Defined Network，SDN)[2]将网络的控制平面和数据平面分离开来，以集中的控制器视角为网络用户提供各种应用服务。SDN 是一种创新型的网络架构[3]，其目标是通过将数据平面和控制平面的分离来简化网络状态管理和控制，实现对网络应用服务的可编程性并逐步引导网络创新[4]。
+\subsection{国内外研究现状}
+\subsection{论文内容及结构安排}
+
+
+
+
+
+
+[4] Kim H,Feamster N．Improving network management with software defined networking
+[J]．IEEE，Communications Magazine,2013，5l(2)：114-119
